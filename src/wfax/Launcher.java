@@ -13,7 +13,7 @@ public class Launcher {
 	public static void main(String[] args) {
 		WFWindow window = new WFWindow();
 
-		int countdown = 0;
+		int countdown = 8;
 
 		String inputFileName = Globals.inputName;
 		String outputFileName = Globals.outputName;

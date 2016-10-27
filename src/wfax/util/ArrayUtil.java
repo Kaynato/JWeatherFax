@@ -31,24 +31,41 @@ public class ArrayUtil {
 		return max;
 	}
 	
-	public static double peakABS_tentFilter(double[] arr, int num, double lower, double upper, double strength) {
+	public static int peakABS_tentFilter(double[] arr, int lower, int upper, double strength, boolean normalize) {
 		double max = 0;
+		int mxi = 0;
 		
 		for (int i = 0; i < arr.length; i++) {
 			// Filter
-			if (arr[i] < lower) {
+			if (strength != 0) {
 				
+				double diff = 0;
+				if (i < lower) {
+					diff = i - lower;
+					arr[i] = arr[i] / strength*diff;
+				}
+				else if (i > upper) {
+					diff = upper - i;
+					arr[i] = arr[i] / strength*diff;
+				}
 			}
 			
-			// Max
-			if (Math.abs(arr[i]) > Math.abs(max))
-				max = arr[i];
+			if (Double.isNaN(arr[i]))
+				arr[i] = 0.0;
+			else
+				arr[i] = Math.abs(arr[i]);
 			
-			// ABS
-			arr[i] = Math.abs(arr[i]);
+			// Max
+			if (arr[i] > max) {
+				max = arr[i];
+				mxi = i;
+			}
 		}
 		
-		return max;
+		if (normalize) for (int i = 0; i < arr.length; i++)
+				arr[i] = arr[i] / max;
+		
+		return mxi;
 	}
 
 	public static double max(double[] arr) {

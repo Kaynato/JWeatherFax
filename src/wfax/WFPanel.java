@@ -16,8 +16,11 @@ public class WFPanel extends JPanel {
 	
 	private WFImage image;
 	private WFController wfcontroller;
+	private WFWindow window;
 	
-	public WFPanel(int width, int height) {
+	public WFPanel(int width, int height, WFWindow window) {
+		this.window = window;
+		
 		setSize(width, height);
 		setPreferredSize(getSize());
 		
@@ -28,6 +31,8 @@ public class WFPanel extends JPanel {
 	
 	public void resizeImage(int width, int height) {
 		image = new WFImage(this, width, height);
+		
+//		window.getFrame().pack();
 	}
 
 	@Override
@@ -35,16 +40,22 @@ public class WFPanel extends JPanel {
 		
 		int iw = image.getWidth();
 		int ih = image.getHeight();
-		BufferedImage after = new BufferedImage(iw, ih, BufferedImage.TYPE_INT_ARGB);
-		AffineTransform at = new AffineTransform();
-		
-		double xScale = (double)getWidth()/(double)iw;
-		double yScale = (double)getHeight()/(double)ih;
-		
-		at.scale(xScale, yScale);
-		AffineTransformOp scaleOp = 
-		   new AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR);
-		after = scaleOp.filter(image, after);
+		BufferedImage after = null;
+
+		if (Globals.RESIZE_IMAGE && (iw != getWidth() || ih != getHeight())) {
+			after = new BufferedImage(iw, ih, BufferedImage.TYPE_INT_ARGB);
+			AffineTransform at = new AffineTransform();
+
+			double xScale = (double)getWidth()/(double)iw;
+			double yScale = (double)getHeight()/(double)ih;
+
+			at.scale(xScale, yScale);
+			AffineTransformOp scaleOp = 
+					new AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR);
+			after = scaleOp.filter(image, after);
+		}
+		else
+			after = image;
 		
 		super.paintComponent(g);
 		g.setColor(Color.WHITE);
@@ -62,6 +73,9 @@ public class WFPanel extends JPanel {
 		
 	}
 	
+	public WFWindow window() {
+		return window;
+	}
 	
 	
 	public WFController getController() {

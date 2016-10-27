@@ -1,0 +1,4 @@
+
+28 May 2016
+	Decided to add in direct timewise visualization of FFT result, above and aligned with the decoding image,
+	to see the effects of filters and to see the peak frequency patterns.

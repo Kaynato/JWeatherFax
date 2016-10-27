@@ -28,6 +28,8 @@ public class WFController implements WaveActor {
 
 	// Cursor
 	private int y = 0, x = 0;
+	// Cursor reset positions / offsets
+	private int y0 = 0, x0 = 0;
 
 	// Linking constructor
 	public WFController(WFPanel panel) {
@@ -48,14 +50,6 @@ public class WFController implements WaveActor {
 	}
 
 
-
-	public void black() {
-		tick(0);
-	}
-
-	public void white() {
-		tick(255);
-	}
 
 	public void tick(int value) {
 		panel.image().setPixel(x++, y, value);
@@ -99,13 +93,13 @@ public class WFController implements WaveActor {
 
 
 	private void linefeed() {
-		x = 0;
+		x = x0;
 		y++;
 	}
 
 	private void pagefeed() {
-		y = 0;
-		x = 0;
+		y = y0;
+		x = x0;
 	}
 
 	
@@ -115,17 +109,19 @@ public class WFController implements WaveActor {
 
 	public void readWAV(String filename, int sp2, int bufp2) {
 		WAVReader reader = WAVReader.open(filename, this, sp2);
+		
+		buffer = new WFBuffer(1024); 
 
 		totalFramesRead = 0;
-		timeElapsed = 0; 
-		timeCount = Globals.TIME_OFFSET;
+		frameTime = 0; 
+		pixelTime = Globals.TIME_OFFSET;
 		fftsize = reader.frames() << bufp2;
 		numChannels = reader.channels();
 
 		fft = new DoubleFFT_1D(fftsize);
 		waves = new double[numChannels][fftsize];
 		freqs = new double[numChannels][waves[0].length];
-		peak_inds = new double[numChannels][][];
+		peak_index = new double[numChannels];
 		buf_i = new int[numChannels];
 		peakLast = new double[numChannels];
 		peakFreq = new double[numChannels];
@@ -140,12 +136,38 @@ public class WFController implements WaveActor {
 		if (fftsize > panel.image().getWidth() && Globals.RESIZE_IMAGE_BOUNDS)
 			panel.resizeImage(fftsize, panel.image().getHeight());
 		
+		if (panel.getWidth() > panel.image().getWidth() || panel.getHeight() > panel.image().getHeight()) {
+//			panel.setSize(Globals.W_WIDTH, Globals.W_HEIGHT);
+			panel.resizeImage(panel.getWidth(), panel.getHeight());
+		}
+		
 		double secPerLine = (60.0/Globals.LPM);
 		secPerPixel =  secPerLine / (double)panel.image().getWidth(); // Divide by pixels per line
-		System.out.println(secPerPixel + " seconds per pixel");
+		System.out.println(secPerPixel + " seconds for each pixel");
 		sampleRate = reader.samprate();
-		System.out.println("Reading " + ((double)(1<<sp2)/(double)sampleRate) + " seconds per pixel.");
+		System.out.println("Reading " + ((double)(1<<sp2)/(double)sampleRate) + " seconds per frame.");
+		
+		if (Globals.DO_SCAN)
+			y0 = freqs[0].length*2;
+		
+		x = x0;
+		y = y0;
+
+		filter_upper = indexFromFreq(Globals.FREQ_FILTER_UPPER);
+		filter_lower = indexFromFreq(Globals.FREQ_FILTER_LOWER);
+		filter_black = indexFromFreq(Globals.FREQ_BLACK);
+		filter_white = indexFromFreq(Globals.FREQ_WHITE);
+		
+		System.out.println("Black at "+filter_black+", White at "+filter_white);
+		
 		reader.read();
+		
+		
+		
+		
+		
+		
+		
 		reader.close();
 	}
 
@@ -161,12 +183,17 @@ public class WFController implements WaveActor {
 	// Channel
 	private double[] peakLast;
 	private double[] peakFreq;
-	// Channel, Peaknum, Peak or Index
-	private double[][][] peak_inds;
+	// Channel
+	private double[] peak_index;
 	
 	private long totalFramesRead;
-	private double timeElapsed;
-	private double timeCount;
+	private double frameTime;
+	private double pixelTime;
+	
+	private int filter_upper,
+				filter_lower,
+				filter_black,
+				filter_white;
 	
 	private double secPerPixel;
 
@@ -180,7 +207,7 @@ public class WFController implements WaveActor {
 	public void apply(double[] wave, int framesRead) {
 		int channel = 0;
 		totalFramesRead += framesRead;
-		timeElapsed = (double)totalFramesRead / (double)sampleRate;
+		frameTime = (double)totalFramesRead / (double)sampleRate;
 		
 		wrapBuf();
 		//			int[] buf_s = Arrays.copyOf(buf_i, buf_i.length);
@@ -194,11 +221,14 @@ public class WFController implements WaveActor {
 		}
 
 //		drawWave(framesRead, numChannels, buf_s);
-		peak_inds = freqExtract(framesRead);
+		peak_index = freqExtract(framesRead);
 		
 		for (int ch = 0; ch < numChannels; ch++)
-			peakFreq[ch] = freqFromIndex(peak_inds[ch][0][1]);
+			peakFreq[ch] = freqFromIndex(peak_index[ch]);
 			
+		if (Globals.DO_SCAN)
+			scanFreq(panel.image());
+		
 		decodeFax();
 		
 		
@@ -208,10 +238,10 @@ public class WFController implements WaveActor {
 //			for (int i = 0; i < peaks[f_ch].length; i++)
 //				freqPrint(peaks, f_ch, i, numChannels);
 	}
-
-	private void decodeFax() {
+	
+	protected void decodeFax() {
 		// 120 LPM
-		if (timeElapsed > timeCount) {
+		if (frameTime > pixelTime || Globals.ALWAYS_TICK) {
 			int signal;
 			if (peakFreq[0] > Globals.FREQ_WHITE - Globals.FREQ_W_THRESHOLD)
 				signal = (0xFFFFFF);
@@ -222,29 +252,76 @@ public class WFController implements WaveActor {
 			}
 			else
 				signal = ((int)(255*(peakFreq[0] - Globals.FREQ_BLACK)/(Globals.FREQ_WHITE - Globals.FREQ_BLACK)));
+			
+//			buffer.push(signal);
+			
 			tick(signal);
-			timeCount += secPerPixel;
-			while (timeElapsed > timeCount) {
-				tick(signal);
-				timeCount += secPerPixel;
+
+			if (!Globals.ALWAYS_TICK) {
+				pixelTime += secPerPixel;
+
+				while (frameTime > pixelTime) {
+					tickRGB(0xFFCCCC);
+					pixelTime += secPerPixel;
+				}
 			}
-		}
-		else {
 			
 		}
+	}
+	
+//	private boolean resized = false;
+	private int xScan = 0;
+	
+	// Requires normalized
+	protected void scanFreq(WFImage image) {
+		xScan = x;
+		// For each frequency in channel 0
+		int ratio = 10;
+		int i = 0;
+		for (int j = 0; j < y0 && j < freqs[0].length*ratio ; j++) {
+			
+			image.setRGB(xScan, filter_black*ratio, 0x00FF00);
+			image.setRGB(xScan, filter_black*ratio+ratio-1, 0x00FF00);
+			
+			image.setRGB(xScan, filter_white*ratio, 0x00FF00);
+			image.setRGB(xScan, filter_white*ratio+ratio-1, 0x00FF00);
+			
+			image.setRGB(xScan, filter_upper*ratio, 0x0000FF);
+			image.setRGB(xScan, filter_upper*ratio+ratio-1, 0x0000FF);
+			
+			image.setRGB(xScan, filter_lower*ratio, 0x0000FF);
+			image.setRGB(xScan, filter_lower*ratio+ratio-1, 0x0000FF);
+			
+			i = j/ratio;
+			int value = (int)(255-255*freqs[0][i]);
+			if (i == peak_index[0])
+				image.setRGB(xScan, j, 0xFF0000);
+			else
+				image.setPixel(xScan, j, value);
+			
+		}
+		
+//		xScan++;
+		Utils.msleep(Globals.SCAN_MS);
+		
 	}
 	
 	private double freqFromIndex(double index) {
 		return Math.round((0.5 * index * (double)sampleRate) / (double)fftsize);
 	}
+	
+	private int indexFromFreq(double freq) {
+		double val = (double)(freq*fftsize);
+		val /= (double)(sampleRate/2);
+		return (int)Math.round(val) ;
+	}
 
-	private double[][][] freqExtract(int framesRead) {
-
+	private double[] freqExtract(int framesRead) {
 		// Perform FFT and obtain maximum index and strength
 		for (int ch = 0; ch < numChannels; ch++) {
 			freqs[ch] = Arrays.copyOf(waves[ch], waves[ch].length);
 			fft.realForward(freqs[ch]);
-			peak_inds[ch] = ArrayUtil.normalizePeaksABS(freqs[ch], Globals.PEAK_NUM);
+			peak_index[ch] = ArrayUtil.peakABS_tentFilter(freqs[ch], filter_lower, filter_upper, Globals.FREQ_FILTER_STRENGTH, true);
 		}
 
 		if (Globals.DO_DRAW)
@@ -253,7 +330,7 @@ public class WFController implements WaveActor {
 			else
 				drawFreqInt();
 
-		return peak_inds;
+		return peak_index;
 	}
 
 	// Draw the fourier output, aliased

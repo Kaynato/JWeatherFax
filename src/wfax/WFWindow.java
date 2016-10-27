@@ -6,11 +6,13 @@ import javax.swing.WindowConstants;
 public class WFWindow {
 
 	private WFPanel panel;
+	
+	private JFrame frame;
 
 	public WFWindow() {
-		JFrame frame = new JFrame("Weatherfacimile Decoder");
+		frame = new JFrame("Weatherfacimile Decoder");
 
-		panel = new WFPanel(Globals.W_WIDTH, Globals.W_HEIGHT);
+		panel = new WFPanel(Globals.W_WIDTH, Globals.W_HEIGHT, this);
 
 		if (Globals.DO_WINDOW) {
 			frame.getContentPane().add(panel);
@@ -27,6 +29,10 @@ public class WFWindow {
 
 	public WFPanel getPanel() {
 		return panel;
+	}
+	
+	public JFrame getFrame() {
+		return frame;
 	}
 
 }
